@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FX Trainer</title><style>
+body{margin:0;background:#0f1a14;color:#e8f5e9;font-family:system-ui;padding:10px;max-width:800px;margin:auto}
+h1{color:#a5d6a7;font-size:20px;margin:6px 0}button,select,input{background:#2e7d32;color:#fff;border:0;border-radius:8px;padding:8px 10px;font-size:15px;margin:3px 1px}
+input{background:#16261d;border:1px solid #2e7d32;width:80px}.sell{background:#c62828}.card{background:#16261d;border-radius:10px;padding:10px;margin:8px 0}
+canvas{width:100%;height:260px;background:#0b130e;border-radius:10px}.big{font-size:26px;color:#ffd54f}.g{color:#66bb6a}.r{color:#ef5350}.small{font-size:12px;color:#9ab}
+table{width:100%;font-size:13px;border-collapse:collapse}td{padding:3px;border-bottom:1px solid #244}
+</style></head><body>
+<h1>FX Trainer: practice forex on real past prices</h1>
+<div class="card"><select id="pair"></select>
+<select id="per"><option value="3">3 years</option><option value="5" selected>5 years</option><option value="10">10 years</option></select>
+<button id="new">New game</button><div class="small">Each game drops you at a random point in real ECB daily rates history. Trade, then move forward day by day and see how your call played out.</div></div>
+<canvas id="c" width="800" height="260"></canvas>
+<div class="card"><span id="date"></span> <span class="big" id="px"></span> <span class="small">SMA20 <span id="sma20"></span> · SMA50 <span id="sma50"></span></span></div>
+<div class="card">Lot size (units) <input id="units" type="number" value="10000"> Leverage <select id="lev"><option>1</option><option selected>10</option><option>30</option><option>50</option></select><br>
+<button id="buy">BUY</button><button id="sell" class="sell">SELL</button><button id="close" style="background:#555">Close position</button>
+<button id="d1">+1 day ▶</button><button id="d5">+5 days ▶▶</button><button id="auto">Auto ▶</button></div>
+<div class="card">Balance <b id="bal"></b> · Equity <b id="eq"></b> · Open: <span id="pos">none</span><br><span class="small" id="stats"></span></div>
+<div class="card"><b>Trade history</b><table id="hist"></table></div>
+<p class="small">This is a practice tool with no real money. Rates are ECB daily reference rates from the free Frankfurter API, not live dealing prices, and there's no spread or swap. No app or strategy can guarantee profit, and most retail forex traders lose money. Use this to learn before risking anything real.</p>
+<script>
+const $=id=>document.getElementById(id);
+const PAIRS=["EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","USD/CAD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","USD/TRY","USD/INR","USD/CNY"];
+PAIRS.forEach(p=>$('pair').innerHTML+=`<option>${p}</option>`);
+let D=[],i=0,bal=+localStorage.fxbal||10000,pos=null,hist=JSON.parse(localStorage.fxhist||"[]"),timer=null;
+async function load(){const [b,q]=$('pair').value.split("/"),y=+$('per').value,end=new Date(),st=new Date(end-y*365*864e5);
+const f=d=>d.toISOString().slice(0,10);const j=await (await fetch(`https://api.frankfurter.dev/v1/${f(st)}..${f(end)}?base=${b}&symbols=${q}`)).json();
+D=Object.entries(j.rates).map(([d,r])=>[d,r[q]]);i=60+Math.floor(Math.random()*(D.length-160));pos=null;draw()}
+const sma=(n)=>{if(i<n)return null;let s=0;for(let k=i-n+1;k<=i;k++)s+=D[k][1];return s/n};
+const dp=p=>p>20?3:5,pnl=()=>pos?(D[i][1]-pos.px)*pos.u*(pos.side=="BUY"?1:-1)/(pos.q=="USD"?1:D[i][1]):0;
+function draw(){const c=$('c'),x=c.getContext('2d'),W=c.width,H=c.height;x.clearRect(0,0,W,H);const s=Math.max(0,i-120),v=D.slice(s,i+1).map(d=>d[1]);
+const mn=Math.min(...v),mx=Math.max(...v),Y=p=>H-10-(p-mn)/(mx-mn||1)*(H-20),X=k=>k/(v.length-1)*(W-10);
+const line=(arr,col)=>{x.strokeStyle=col;x.lineWidth=2;x.beginPath();arr.forEach((p,k)=>{if(p==null)return;k&&arr[k-1]!=null?x.lineTo(X(k),Y(p)):x.moveTo(X(k),Y(p))});x.stroke()};
+line(v,"#ffd54f");line(v.map((_,k)=>{let j=s+k;if(j<20)return null;let t=0;for(let m=j-19;m<=j;m++)t+=D[m][1];return t/20}),"#42a5f5");
+line(v.map((_,k)=>{let j=s+k;if(j<50)return null;let t=0;for(let m=j-49;m<=j;m++)t+=D[m][1];return t/50}),"#ab47bc");
+if(pos){x.strokeStyle=pos.side=="BUY"?"#66bb6a":"#ef5350";x.setLineDash([5,5]);x.beginPath();x.moveTo(0,Y(pos.px));x.lineTo(W,Y(pos.px));x.stroke();x.setLineDash([])}
+const p=D[i][1];$('date').textContent=D[i][0];$('px').textContent=p.toFixed(dp(p));$('sma20').textContent=(sma(20)||0).toFixed(dp(p));$('sma50').textContent=(sma(50)||0).toFixed(dp(p));
+const pl=pnl();$('bal').textContent="$"+bal.toFixed(2);$('eq').innerHTML=`<span class="${pl>=0?'g':'r'}">$${(bal+pl).toFixed(2)}</span>`;
+$('pos').innerHTML=pos?`${pos.side} ${pos.u} @ ${pos.px.toFixed(dp(p))} <span class="${pl>=0?'g':'r'}">${pl>=0?'+':''}$${pl.toFixed(2)}</span>`:"none";
+const w=hist.filter(h=>h.pl>0).length;$('stats').textContent=hist.length?`Trades ${hist.length} · Win rate ${(w/hist.length*100).toFixed(0)}% · Total P/L $${hist.reduce((a,h)=>a+h.pl,0).toFixed(2)}`:"";
+$('hist').innerHTML=hist.slice(-15).reverse().map(h=>`<tr><td>${h.pair}</td><td>${h.side}</td><td>${h.open}→${h.close}</td><td class="${h.pl>=0?'g':'r'}">$${h.pl.toFixed(2)}</td></tr>`).join("");
+localStorage.fxbal=bal;localStorage.fxhist=JSON.stringify(hist)}
+function open(side){if(pos)closeP();const u=+$('units').value,[b,q]=$('pair').value.split("/");const need=u*(b=="USD"?1:D[i][1])/+$('lev').value;if(need>bal){alert("Not enough margin for that size at this leverage.");return}pos={side,u,px:D[i][1],q,d:D[i][0]};draw()}
+function closeP(){if(!pos)return;const pl=pnl();bal+=pl;hist.push({pair:$('pair').value,side:pos.side,open:pos.d,close:D[i][0],pl});pos=null;draw()}
+function step(n){for(let k=0;k<n&&i<D.length-1;k++)i++;if(pos&&bal+pnl()<=0){alert("Margin call! Position closed.");closeP()}draw();if(i>=D.length-1){clearInterval(timer);timer=null;alert("You've reached today. Start a new game.")}}
+$('buy').onclick=()=>open("BUY");$('sell').onclick=()=>open("SELL");$('close').onclick=closeP;$('d1').onclick=()=>step(1);$('d5').onclick=()=>step(5);
+$('auto').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('auto').textContent="Auto ▶"}else{timer=setInterval(()=>step(1),400);$('auto').textContent="Pause ⏸"}};
+$('new').onclick=load;$('pair').onchange=load;load();
+</script></body></html>
